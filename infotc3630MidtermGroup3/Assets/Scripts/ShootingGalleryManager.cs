@@ -40,6 +40,9 @@ public class ShootingGalleryManager : MonoBehaviour
 
     [Header("Scoring")]
     public int pointsPerKill = 100;
+    public int slowPoints = 50;
+    public int normalPoints = 100;
+    public int fastPoints = 250;
 
 
     [Header("UI — Buttons")]
@@ -53,9 +56,10 @@ public class ShootingGalleryManager : MonoBehaviour
     public TextMeshProUGUI scoreText;       // Swap to Text if not using TMP
     public TextMeshProUGUI timerText;       // Optional countdown timer
     public TextMeshProUGUI speedLabel;      // Shows current speed setting
+    public TextMeshProUGUI highScoreText;
 
     [Header("Game Timer (0 = no timer)")]
-    public float gameDuration = 60f;        // Set to 0 for endless mode
+    public float gameDuration = 45f;        // Set to 0 for endless mode
 
 
 
@@ -233,6 +237,9 @@ public class ShootingGalleryManager : MonoBehaviour
     private void SetSpeedMultiplier(float multiplier, string label)
     {
         _currentMultiplier = multiplier;
+        if (multiplier == slowMultiplier) pointsPerKill = slowPoints;
+        if (multiplier == normalMultiplier) pointsPerKill = normalPoints;
+        if (multiplier == fastMultiplier) pointsPerKill = fastPoints;
         SetSpeedButtonLabels(label);
 
         // Apply to all currently active UFOs
@@ -263,6 +270,13 @@ public class ShootingGalleryManager : MonoBehaviour
         if (timerText != null)
             timerText.text = "TIME'S UP!";
 
+        int highScore = PlayerPrefs.GetInt("HighScore", 0);
+        if (_score > highScore)
+        {
+            PlayerPrefs.SetInt("HighScore", _score);
+            PlayerPrefs.Save();
+        }
+
         startButton.interactable = true;
     }
 
@@ -289,6 +303,8 @@ public class ShootingGalleryManager : MonoBehaviour
     {
         if (scoreText != null)
             scoreText.text = $"SCORE: {_score}";
+        if (highScoreText != null)
+            highScoreText.text = $"BEST: {PlayerPrefs.GetInt("HighScore", 0)}";
     }
 
     private void UpdateTimerDisplay()

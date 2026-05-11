@@ -1,98 +1,105 @@
 ﻿using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.InputSystem;
 using System.Collections;
 
-public class RayCastShoot : MonoBehaviour {
+[RequireComponent(typeof(XRGrabInteractable))]
+public class RayCastShoot : MonoBehaviour
+{
+    public int gunDamage = 1;
+    public float fireRate = 0.25f;
+    public float weaponRange = 50f;
+    public float hitForce = 100f;
+    public Transform gunEnd;
 
-	public int gunDamage = 1;											// Set the number of hitpoints that this gun will take away from shot objects with a health script
-	public float fireRate = 0.25f;										// Number in seconds which controls how often the player can fire
-	public float weaponRange = 50f;										// Distance in Unity units over which the player can fire
-	public float hitForce = 100f;										// Amount of force which will be added to objects with a rigidbody shot by the player
-	public Transform gunEnd;											// Holds a reference to the gun end object, marking the muzzle location of the gun
+    private WaitForSeconds shotDuration = new WaitForSeconds(0.07f);
+    private AudioSource gunAudio;
+    private LineRenderer laserLine;
+    private float nextFire;
 
-	private Camera fpsCam;												// Holds a reference to the first person camera
-	private WaitForSeconds shotDuration = new WaitForSeconds(0.07f);	// WaitForSeconds object used by our ShotEffect coroutine, determines time laser line will remain visible
-	private AudioSource gunAudio;										// Reference to the audio source which will play our shooting sound effect
-	private LineRenderer laserLine;										// Reference to the LineRenderer component which will display our laserline
-	private float nextFire;												// Float to store the time the player will be allowed to fire again, after firing
+    private XRGrabInteractable _grabbable;
+    private Transform _heldByTransform;
+    private InputAction _activeTrigger;
 
+    [Header("Tutorial")]
+    public GameObject instructionUI;
+    private bool _pickedUpOnce = false;
 
-	void Start () 
-	{
-		// Get and store a reference to our LineRenderer component
-		laserLine = GetComponent<LineRenderer>();
+    void Awake()
+    {
+        laserLine = GetComponent<LineRenderer>();
+        gunAudio = GetComponent<AudioSource>();
+        _grabbable = GetComponent<XRGrabInteractable>();
+        _grabbable.selectEntered.AddListener(OnGrabbed);
+        _grabbable.selectExited.AddListener(OnReleased);
+    }
 
-		// Get and store a reference to our AudioSource component
-		gunAudio = GetComponent<AudioSource>();
+    void OnDestroy()
+    {
+        _grabbable.selectEntered.RemoveListener(OnGrabbed);
+        _grabbable.selectExited.RemoveListener(OnReleased);
+    }
 
-		// Get and store a reference to our Camera by searching this GameObject and its parents
-		fpsCam = GetComponentInParent<Camera>();
-	}
-	
+    private void OnGrabbed(SelectEnterEventArgs args)
+    {
+        _heldByTransform = args.interactorObject.transform;
 
-	void Update () 
-	{
-		// Check if the player has pressed the fire button and if enough time has elapsed since they last fired
-		if (Input.GetButtonDown("Fire1") && Time.time > nextFire) 
-		{
-			// Update the time when our player can fire next
-			nextFire = Time.time + fireRate;
+        var controller = args.interactorObject.transform
+            .GetComponent<ActionBasedController>();
+        if (controller != null)
+            _activeTrigger = controller.activateAction.action;
 
-			// Start our ShotEffect coroutine to turn our laser line on and off
-            StartCoroutine (ShotEffect());
+        if (!_pickedUpOnce)
+        {
+            _pickedUpOnce = true;
+            if (instructionUI != null)
+                instructionUI.SetActive(false);
+        }
+    }
 
-            // Create a vector at the center of our camera's viewport
-            Vector3 rayOrigin = fpsCam.ViewportToWorldPoint (new Vector3(0.5f, 0.5f, 0.0f));
+    private void OnReleased(SelectExitEventArgs args)
+    {
+        _heldByTransform = null;
+        _activeTrigger = null;
+    }
 
-            // Declare a raycast hit to store information about what our raycast has hit
-            RaycastHit hit;
+    void Update()
+    {
+        if (_heldByTransform == null) return;
+        if (_activeTrigger == null || !_activeTrigger.WasPressedThisFrame()) return;
+        if (Time.time <= nextFire) return;
 
-			// Set the start position for our visual effect for our laser to the position of gunEnd
-			laserLine.SetPosition (0, gunEnd.position);
+        nextFire = Time.time + fireRate;
+        StartCoroutine(ShotEffect());
 
-			// Check if our raycast has hit anything
-			if (Physics.Raycast (rayOrigin, fpsCam.transform.forward, out hit, weaponRange))
-			{
-				// Set the end position for our laser line 
-				laserLine.SetPosition (1, hit.point);
+        Vector3 rayOrigin = gunEnd.position;
+        Vector3 rayDirection = gunEnd.forward;
+        RaycastHit hit;
 
-                // Get a reference to a health script attached to the collider we hit
-                UFOTarget health = hit.collider.GetComponent<UFOTarget>();
+        laserLine.SetPosition(0, gunEnd.position);
 
-                // If there was a health script attached
-                if (health != null)
-				{
-					// Call the damage function of that script, passing in our gunDamage variable
-					health.Damage (gunDamage);
-				}
+        if (Physics.Raycast(rayOrigin, rayDirection, out hit, weaponRange))
+        {
+            laserLine.SetPosition(1, hit.point);
 
-				// Check if the object we hit has a rigidbody attached
-				if (hit.rigidbody != null)
-				{
-					// Add force to the rigidbody we hit, in the direction from which it was hit
-					hit.rigidbody.AddForce (-hit.normal * hitForce);
-				}
-			}
-			else
-			{
-				// If we did not hit anything, set the end of the line to a position directly in front of the camera at the distance of weaponRange
-                laserLine.SetPosition (1, rayOrigin + (fpsCam.transform.forward * weaponRange));
-			}
-		}
-	}
+            UFOTarget health = hit.collider.GetComponent<UFOTarget>();
+            if (health != null)
+                health.Damage(gunDamage);
 
+            if (hit.rigidbody != null)
+                hit.rigidbody.AddForce(-hit.normal * hitForce);
+        }
+        else
+        {
+            laserLine.SetPosition(1, rayOrigin + rayDirection * weaponRange);
+        }
+    }
 
-	private IEnumerator ShotEffect()
-	{
-		// Play the shooting sound effect
-		gunAudio.Play ();
-
-		// Turn on our line renderer
-		laserLine.enabled = true;
-
-		//Wait for .07 seconds
-		yield return shotDuration;
-
-		// Deactivate our line renderer after waiting
-		laserLine.enabled = false;
-	}
+    private IEnumerator ShotEffect()
+    {
+        gunAudio.Play();
+        laserLine.enabled = true;
+        yield return shotDuration;
+        laserLine.enabled = false;
+    }
 }
